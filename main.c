@@ -12,7 +12,7 @@
 
 #include <libusb.h>
 
-#define MAPLE_VENDOR	0x1eaf
+#define MAPLE_VENDOR		0x1eaf
 #define MAPLE_PROD_LOADER	3
 #define MAPLE_PROD_SERIAL	4
 
@@ -29,7 +29,16 @@ ATTRS{idProduct}=="0004", ATTRS{idVendor}=="1eaf", MODE="664", GROUP="plugdev" S
 int verbose = 0;
 
 void list_maple ( libusb_context * );
+int find_maple ( libusb_context * );
 char *find_maple_serial ( void );
+
+/* return codes from find_maple()
+ * could be an enum, but I'm too lazy
+ */
+#define MAPLE_NONE	0
+#define MAPLE_SERIAL	1
+#define MAPLE_LOADER	2
+#define MAPLE_UNKNOWN	3
 
 void
 error ( char *msg )
@@ -44,12 +53,17 @@ main ( int argc, char **argv )
 	libusb_context *context;
 	int s;
 	char *ser;
+	int m;
 
 	s = libusb_init(&context);
 	if ( s )
 	    error ( "Cannot init libusb" );
 
-	list_maple ( context );
+	// list_maple ( context );
+	m = find_maple ( context );
+	printf ( "Scan found: %d\n", m );
+	// XXX = report more than one maple on bus
+	// XXX
 
 	ser = find_maple_serial ();
 	if ( ! ser ) 
@@ -124,6 +138,48 @@ list_maple ( libusb_context *context )
 		desc.idVendor, desc.idProduct );
 	}
 	libusb_free_device_list(list, 0);
+}
+
+/* a modified version of the above, but instead of listing
+ * everything, we just scan for the Maple vendor.
+ * XXX - we stop at the first match for the Maple Vendor.
+ *  if there are more than one maple devices online
+ *  this may not be right, we ought to at least warn.
+ */
+int
+find_maple ( libusb_context *context )
+{
+	struct libusb_device_descriptor desc;
+	struct libusb_device *dev;
+	libusb_device **list;
+	ssize_t ndev;
+	int i;
+	int s;
+	int rv = MAPLE_NONE;
+
+	ndev = libusb_get_device_list ( context, &list );
+	// printf ( "%d USB devices in list\n", ndev );
+
+	for ( i=0; i<ndev; i++ ) {
+	    dev = list[i];
+	    s = libusb_get_device_descriptor(dev, &desc);
+	    if ( s ) {
+		// printf ( "device %2d, no descriptor\n", i );
+		continue;
+	    }
+	    if ( desc.idVendor != MAPLE_VENDOR )
+		continue;
+	    // printf("Vendor:Device = %04x:%04x\n", desc.idVendor, desc.idProduct );
+	    if ( desc.idProduct == MAPLE_PROD_SERIAL )
+		rv = MAPLE_SERIAL;
+	    else if ( desc.idProduct == MAPLE_PROD_LOADER )
+		rv = MAPLE_SERIAL;
+	    else
+		rv = MAPLE_UNKNOWN;
+	}
+
+	libusb_free_device_list(list, 0);
+	return rv;
 }
 
 /* The idea here is to open
