@@ -1,7 +1,7 @@
 # Makefile for maple-util
 # Tom Trebisky  11-2-2020
 
-OBJS = main.o
+OBJS = main.o dfu_load.o dfu.o
 
 all: maple-util
 
