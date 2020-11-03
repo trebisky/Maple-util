@@ -28,7 +28,7 @@ ATTRS{idProduct}=="0004", ATTRS{idVendor}=="1eaf", MODE="664", GROUP="plugdev" S
 
 int verbose = 0;
 
-void list_maple ( libusb_context * );
+void list_maple ( libusb_context *, int );
 int find_maple ( libusb_context * );
 char *find_maple_serial ( void );
 
@@ -59,17 +59,35 @@ main ( int argc, char **argv )
 	if ( s )
 	    error ( "Cannot init libusb" );
 
-	// list_maple ( context );
+	list_maple ( context, 1 );
 	m = find_maple ( context );
-	printf ( "Scan found: %d\n", m );
+	// printf ( "Scan found: %d\n", m );
+
+	switch ( m ) {
+	    case MAPLE_SERIAL:
+		printf ( "Maple device in serial (application) mode\n" );
+		break;
+	    case MAPLE_LOADER:
+		printf ( "Maple device in DFU loader mode\n" );
+		break;
+	    case MAPLE_UNKNOWN:
+		printf ( "Maple device in some unknown mode !!?\n" );
+		break;
+	    case MAPLE_NONE:
+	    default:
+		printf ( "No maple device found\n" );
+	}
+
 	// XXX = report more than one maple on bus
 	// XXX
 
-	ser = find_maple_serial ();
-	if ( ! ser ) 
-	    printf ( "No maple device found\n" );
-	else
-	    printf ( "Found maple device: %s\n", ser );
+	if ( m == MAPLE_SERIAL ) {
+	    ser = find_maple_serial ();
+	    if ( ! ser ) 
+		printf ( "No maple device found\n" );
+	    else
+		printf ( "Found maple device: %s\n", ser );
+	}
 
 	libusb_exit(context);
 	return 0;
@@ -110,7 +128,7 @@ get_string ( struct libusb_device *dev, int index )
  *  a python script to capture and parse the output.
  */
 void
-list_maple ( libusb_context *context )
+list_maple ( libusb_context *context, int verb )
 {
 	struct libusb_device_descriptor desc;
 	struct libusb_device *dev;
@@ -120,7 +138,7 @@ list_maple ( libusb_context *context )
 	int s;
 
 	ndev = libusb_get_device_list ( context, &list );
-	printf ( "%d USB devices in list\n", ndev );
+	// printf ( "%d USB devices in list\n", ndev );
 	for ( i=0; i<ndev; i++ ) {
 	    dev = list[i];
 	    s = libusb_get_device_descriptor(dev, &desc);
@@ -134,8 +152,21 @@ list_maple ( libusb_context *context )
 		get_string (dev, desc.iManufacturer),
 		get_string (dev, desc.iProduct) );
 #endif
-	    printf("Vendor:Device = %04x:%04x -- %s %s\n", 
-		desc.idVendor, desc.idProduct );
+	    if ( desc.idVendor != MAPLE_VENDOR ) {
+		if ( verb ) 
+		    printf("Vendor:Device = %04x:%04x -- %s %s\n", 
+			desc.idVendor, desc.idProduct );
+	    } else {
+		if ( desc.idProduct == MAPLE_PROD_SERIAL )
+		    printf("Vendor:Device = %04x:%04x -- %s %s - Maple serial\n", 
+			desc.idVendor, desc.idProduct );
+		else if ( desc.idProduct == MAPLE_PROD_LOADER )
+		    printf("Vendor:Device = %04x:%04x -- %s %s - Maple loader\n", 
+			desc.idVendor, desc.idProduct );
+		else
+		    printf("Vendor:Device = %04x:%04x -- %s %s - Maple in unknow mode !?\n", 
+			desc.idVendor, desc.idProduct );
+	    }
 	}
 	libusb_free_device_list(list, 0);
 }
@@ -173,7 +204,7 @@ find_maple ( libusb_context *context )
 	    if ( desc.idProduct == MAPLE_PROD_SERIAL )
 		rv = MAPLE_SERIAL;
 	    else if ( desc.idProduct == MAPLE_PROD_LOADER )
-		rv = MAPLE_SERIAL;
+		rv = MAPLE_LOADER;
 	    else
 		rv = MAPLE_UNKNOWN;
 	}

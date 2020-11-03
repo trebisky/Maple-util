@@ -96,13 +96,14 @@ dfuload_do_dnload (struct dfu_if *dif, int xfer_size, struct dfu_file *file)
 			}
 
 			if (dst.bState == DFU_STATE_dfuDNLOAD_IDLE ||
-					dst.bState == DFU_STATE_dfuERROR)
+			    dst.bState == DFU_STATE_dfuERROR)
 				break;
 
 			/* Wait while device executes flashing */
 			milli_sleep(dst.bwPollTimeout);
 
 		} while (1);
+
 		if (dst.bStatus != DFU_STATUS_OK) {
 			printf(" failed!\n");
 			printf("state(%u) = %s, status(%u) = %s\n", dst.bState,
