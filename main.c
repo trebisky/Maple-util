@@ -6,6 +6,9 @@
  */
 #include <stdlib.h>
 #include <stdio.h>
+#include <sys/types.h>
+#include <fcntl.h>
+#include <string.h>
 
 #include <libusb.h>
 
@@ -13,9 +16,20 @@
 #define MAPLE_PROD_LOADER	3
 #define MAPLE_PROD_SERIAL	4
 
+/* To allow this script to get access to the Maple DFU loader
+ * without having to run as root all the time, put the following
+ * into a file named 45-maple.rules and put that file
+ * into /etc/udev/rules.d
+ATTRS{idProduct}=="1001", ATTRS{idVendor}=="0110", MODE="664", GROUP="plugdev"
+ATTRS{idProduct}=="1002", ATTRS{idVendor}=="0110", MODE="664", GROUP="plugdev"
+ATTRS{idProduct}=="0003", ATTRS{idVendor}=="1eaf", MODE="664", GROUP="plugdev" SYMLINK+="maple"
+ATTRS{idProduct}=="0004", ATTRS{idVendor}=="1eaf", MODE="664", GROUP="plugdev" SYMLINK+="maple"
+ */
+
 int verbose = 0;
 
 void list_maple ( libusb_context * );
+char *find_maple_serial ( void );
 
 void
 error ( char *msg )
@@ -27,14 +41,21 @@ error ( char *msg )
 int
 main ( int argc, char **argv )
 {
-	int s;
 	libusb_context *context;
+	int s;
+	char *ser;
 
 	s = libusb_init(&context);
 	if ( s )
 	    error ( "Cannot init libusb" );
 
 	list_maple ( context );
+
+	ser = find_maple_serial ();
+	if ( ! ser ) 
+	    printf ( "No maple device found\n" );
+	else
+	    printf ( "Found maple device: %s\n", ser );
 
 	libusb_exit(context);
 	return 0;
@@ -104,6 +125,81 @@ list_maple ( libusb_context *context )
 	}
 	libusb_free_device_list(list, 0);
 }
+
+/* The idea here is to open
+ * /sys/class/tty/ttyACM0/device/uevent
+ * And read something like this:
+DEVTYPE=usb_interface
+DRIVER=cdc_acm
+PRODUCT=1eaf/4/200
+TYPE=2/0/0
+INTERFACE=2/2/1
+MODALIAS=usb:v1EAFp0004d0200dc02dsc00dp00ic02isc02ip01in00
+ *
+ * The PRODUCT line is the thing, if it contains "1eaf/4" you got it.
+ */
+static int
+serial_is_maple ( char *dev )
+{
+	char path[100];
+	char line[100];
+	FILE *fp;
+	char *p;
+	int rv = 0;
+
+	sprintf ( path, "/sys/class/tty/%s/device/uevent", dev );
+
+	fp = fopen ( path, "r" );
+	if ( ! fp )
+	    return rv;
+
+	while ( fgets(line,100,fp) ) {
+	    if ( line[0] != 'P' )
+		continue;
+	    if ( line[1] != 'R' )
+		continue;
+	    if ( line[3] != 'D' )
+		continue;
+	    p = line;
+	    while ( *p && *p != '=' )
+		p++;
+	    printf ( "%s", p );
+	    if ( strncmp ( p, "=1eaf/4", 7 ) == 0 )
+		rv = 1;
+	    break;
+	}
+	fclose ( fp );
+	return rv;
+}
+
+/* Call this and expect something like "/dev/ttyACM0" to get returned.
+ *  in fact that is the usual thing at this time.
+ *  A person could add some trickery to the udev rules to generate
+ *  a symlink like /dev/maple to make all this unnecessary.
+ */
+char *
+find_maple_serial ( void )
+{
+	static char dev[20];
+	char dev2[20];
+	int i;
+	int fd;
+
+	for ( i=0; i<10; i++ ) {
+	    sprintf ( dev, "/dev/ttyACM%d", i );
+	    fd = open ( dev, O_RDWR );
+	    if ( fd < 0 )
+		break;
+	    printf ( "Serial: %s\n", dev );
+	    sprintf ( dev2, "ttyACM%d", i );
+	    if ( serial_is_maple ( dev2 ) )
+		return dev;
+	}
+
+	return NULL;
+}
+
+/* ============================================================= */
 
 /* This assumes we have nanosleep()
  *  and we do on a linux system.
