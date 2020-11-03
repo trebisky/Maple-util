@@ -6,11 +6,15 @@
  */
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <string.h>
 
 #include <libusb.h>
+
+#include "util.h"
 
 #define MAPLE_VENDOR		0x1eaf
 #define MAPLE_PROD_LOADER	3
@@ -31,6 +35,7 @@ int verbose = 0;
 void list_maple ( libusb_context *, int );
 int find_maple ( libusb_context * );
 char *find_maple_serial ( void );
+int get_file ( struct dfu_file * );
 
 /* return codes from find_maple()
  * could be an enum, but I'm too lazy
@@ -47,6 +52,8 @@ error ( char *msg )
 	exit ( 1 );
 }
 
+struct dfu_file file;
+
 int
 main ( int argc, char **argv )
 {
@@ -54,14 +61,37 @@ main ( int argc, char **argv )
 	int s;
 	char *ser;
 	int m;
+	char *p;
+
+	file.name = NULL;
+	argc--;
+	argv++;
+	while ( argc-- ) {
+	    p = *argv++;
+	    if ( *p == '-' ) {
+		p++;
+		while ( *p && *p++ == 'v' )
+		    verbose++;
+		continue;
+	    }
+
+	    file.name = p;
+	}
 
 	s = libusb_init(&context);
 	if ( s )
 	    error ( "Cannot init libusb" );
 
-	list_maple ( context, 1 );
+	list_maple ( context, verbose );
 	m = find_maple ( context );
 	// printf ( "Scan found: %d\n", m );
+
+	if ( get_file ( &file ) ) {
+	    printf ( "Cannot open file: %s\n", file.name );
+	    error ( "Abandoning ship" );
+	}
+	if ( file.name && verbose )
+	    printf ( "Read %d bytes from: %s\n", file.size, file.name );
 
 	switch ( m ) {
 	    case MAPLE_SERIAL:
@@ -90,6 +120,42 @@ main ( int argc, char **argv )
 	}
 
 	libusb_exit(context);
+	return 0;
+}
+
+int
+get_file ( struct dfu_file *file )
+{
+	struct stat fstat;
+	int fd;
+	int n;
+
+	if ( ! file->name )
+	    return 0;
+
+	if ( stat ( file->name, &fstat ) < 0 )
+	    return 1;
+
+	file->size = fstat.st_size;
+	// printf ( "Stat gives: %d\n", fstat.st_size );
+	if ( file->size > 128 * 1024 )
+	    error ( "Input file too big" );
+
+	/* We never free this, we just exit */
+	file->buf = malloc ( file->size );
+	if ( file->buf == NULL )
+	    error ( "Cannot allocate file buffer" );
+
+	fd = open ( file->name, O_RDONLY );
+	if ( fd < 0 )
+	    return 1;
+
+	n = read ( fd, file->buf, file->size );
+	// printf ( "read %d %d\n", n, file->size );
+	close ( fd );
+	if ( n != file->size )
+	    error ( "IO error reading file" );
+
 	return 0;
 }
 

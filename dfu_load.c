@@ -38,15 +38,18 @@ void milli_sleep ( int );
 
 #include <libusb.h>
 
+#include "util.h"
 #include "dfu.h"
-#include "dfu_file.h"
 
 #ifndef TJT
 #include "portable.h"
 #include "usb_dfu.h"
+#include "dfu_file.h"
 #include "dfu_load.h"
 #include "quirks.h"
 #endif
+
+extern int verbose;
 
 int
 dfuload_do_dnload (struct dfu_if *dif, int xfer_size, struct dfu_file *file)
@@ -60,11 +63,12 @@ dfuload_do_dnload (struct dfu_if *dif, int xfer_size, struct dfu_file *file)
 
 	printf("Copying data from PC to DFU device\n");
 
-	buf = file->firmware;
-	expected_size = file->size.total - file->size.suffix;
+	buf = file->buf;
+	//expected_size = file->size.total - file->size.suffix;
+	expected_size = file->size;
 	bytes_sent = 0;
 
-	dfu_progress_bar("Download", 0, 1);
+	//dfu_progress_bar("Download", 0, 1);
 	while (bytes_sent < expected_size) {
 		int bytes_left;
 		int chunk_size;
@@ -112,7 +116,7 @@ dfuload_do_dnload (struct dfu_if *dif, int xfer_size, struct dfu_file *file)
 			ret = -1;
 			goto out;
 		}
-		dfu_progress_bar("Download", bytes_sent, bytes_sent + bytes_left);
+		//dfu_progress_bar("Download", bytes_sent, bytes_sent + bytes_left);
 	}
 
 	/* send one zero sized download request to signalize end */
@@ -126,7 +130,7 @@ dfuload_do_dnload (struct dfu_if *dif, int xfer_size, struct dfu_file *file)
 		goto out;
 	}
 
-	dfu_progress_bar("Download", bytes_sent, bytes_sent);
+	//dfu_progress_bar("Download", bytes_sent, bytes_sent);
 
 	if (verbose)
 		printf("Sent a total of %i bytes\n", bytes_sent);
@@ -175,7 +179,7 @@ int dfuload_do_upload(struct dfu_if *dif, int xfer_size,
 	buf = dfu_malloc(xfer_size);
 
 	printf("Copying data from DFU device to PC\n");
-	dfu_progress_bar("Upload", 0, 1);
+	//dfu_progress_bar("Upload", 0, 1);
 
 	while (1) {
 		int rc;
@@ -202,12 +206,12 @@ int dfuload_do_upload(struct dfu_if *dif, int xfer_size,
 			ret = total_bytes;
 			break;
 		}
-		dfu_progress_bar("Upload", total_bytes, expected_size);
+		//dfu_progress_bar("Upload", total_bytes, expected_size);
 	}
 	ret = 0;
 
 out_free:
-	dfu_progress_bar("Upload", total_bytes, total_bytes);
+	//dfu_progress_bar("Upload", total_bytes, total_bytes);
 	if (total_bytes == 0)
 		printf("\nFailed.\n");
 	free(buf);

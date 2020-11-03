@@ -4,3 +4,5 @@ TAGS
 *.swp
 *.o
 maple-util
+OLD
+*.bin
