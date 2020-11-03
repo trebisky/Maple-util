@@ -5,5 +5,8 @@ OBJS = main.o
 
 all: maple-util
 
+# This nonsense is required to find libusb.h
+CFLAGS += -I/usr/include/libusb-1.0
+
 maple-util:	$(OBJS)
-	cc -o maple-util $(OBJS)
+	cc -o maple-util $(OBJS) -lusb-1.0
