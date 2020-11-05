@@ -11,7 +11,7 @@ CFLAGS += -I/usr/include/libusb-1.0
 maple-util:	$(OBJS)
 	cc -o maple-util $(OBJS) -lusb-1.0
 
-main.o dfu_load.o: util.h
+main.o dfu_load.o: maple.h
 
 clean:
 	rm -f *.o maple-util

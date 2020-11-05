@@ -14,7 +14,7 @@
 
 #include <libusb.h>
 
-#include "util.h"
+#include "maple.h"
 // #include "usb_dfu.h"
 
 #define MAPLE_VENDOR		0x1eaf
@@ -33,6 +33,8 @@ ATTRS{idProduct}=="0003", ATTRS{idVendor}=="1eaf", MODE="664", GROUP="plugdev" S
 ATTRS{idProduct}=="0004", ATTRS{idVendor}=="1eaf", MODE="664", GROUP="plugdev" SYMLINK+="maple"
  */
 
+#ifdef notdef
+/* Now in maple.h */
 struct maple_device {
 	struct libusb_device *dev;
 	struct libusb_device_descriptor desc;
@@ -41,6 +43,7 @@ struct maple_device {
 	int interface;
 	int alt;
 };
+#endif
 
 int verbose = 0;
 
@@ -48,6 +51,8 @@ int list_maple ( libusb_context *, int );
 int find_maple ( libusb_context *, struct maple_device * );
 char *find_maple_serial ( void );
 int get_file ( struct dfu_file * );
+
+int dfuload_do_dnload ( struct maple_device *, struct dfu_file * );
 
 /* return codes from find_maple()
  * could be an enum, but I'm too lazy
@@ -184,6 +189,7 @@ main ( int argc, char **argv )
 	    if ( s == 0 ) {
 		s = 0;
 		// s = dfuload_do_dnload ( dfu_root, transfer_size, &file);
+		s = dfuload_do_dnload ( &maple_device, &file);
 		if ( s < 0 )
 		    printf ( "Download reported trouble\n" );
 	    }

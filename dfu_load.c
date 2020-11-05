@@ -38,7 +38,7 @@ void milli_sleep ( int );
 
 #include <libusb.h>
 
-#include "util.h"
+#include "maple.h"
 #include "dfu.h"
 
 #ifndef TJT
@@ -52,7 +52,8 @@ void milli_sleep ( int );
 extern int verbose;
 
 int
-dfuload_do_dnload (struct dfu_if *dif, int xfer_size, struct dfu_file *file)
+dfuload_do_dnload (struct maple_device *mp, struct dfu_file *file)
+// dfuload_do_dnload (struct dfu_if *dif, int xfer_size, struct dfu_file *file)
 {
 	int bytes_sent;
 	int expected_size;
@@ -60,6 +61,7 @@ dfuload_do_dnload (struct dfu_if *dif, int xfer_size, struct dfu_file *file)
 	unsigned short transaction = 0;
 	struct dfu_status dst;
 	int ret;
+	int xfer_size = mp->xfer_size;
 
 	printf("Copying data from PC to DFU device\n");
 
@@ -79,7 +81,8 @@ dfuload_do_dnload (struct dfu_if *dif, int xfer_size, struct dfu_file *file)
 		else
 			chunk_size = xfer_size;
 
-		ret = dfu_download(dif->dev_handle, dif->interface,
+		// ret = dfu_download(dif->dev_handle, dif->interface,
+		ret = dfu_download ( mp->devh, mp->interface,
 		    chunk_size, transaction++, chunk_size ? buf : NULL);
 		if (ret < 0) {
 			// warnx("Error during download");
@@ -90,7 +93,8 @@ dfuload_do_dnload (struct dfu_if *dif, int xfer_size, struct dfu_file *file)
 		buf += chunk_size;
 
 		do {
-			ret = dfu_get_status(dif, &dst);
+			// ret = dfu_get_status(dif, &dst);
+			ret = dfu_get_status(mp, &dst);
 			if (ret < 0) {
 				// errx(EX_IOERR, "Error during download get_status");
 				// errx would exit, original code had the goto,
@@ -120,7 +124,7 @@ dfuload_do_dnload (struct dfu_if *dif, int xfer_size, struct dfu_file *file)
 	}
 
 	/* send one zero sized download request to signalize end */
-	ret = dfu_download(dif->dev_handle, dif->interface,
+	ret = dfu_download(mp->devh, mp->interface,
 	    0, transaction, NULL);
 	if (ret < 0) {
 		// errx(EX_IOERR, "Error sending completion packet");
@@ -137,7 +141,7 @@ dfuload_do_dnload (struct dfu_if *dif, int xfer_size, struct dfu_file *file)
 
 get_status:
 	/* Transition to MANIFEST_SYNC state */
-	ret = dfu_get_status(dif, &dst);
+	ret = dfu_get_status ( mp, &dst);
 	if (ret < 0) {
 		// warnx("unable to read DFU status after completion");
 		printf("unable to read DFU status after completion");

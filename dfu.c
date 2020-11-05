@@ -31,6 +31,7 @@ void milli_sleep ( int );
 
 #include <libusb.h>
 
+#include "maple.h"
 #include "dfu.h"
 
 #ifndef TJT
@@ -136,7 +137,9 @@ int dfu_upload( libusb_device_handle *device,
  *
  *  return the number of bytes read in or < 0 on an error
  */
-int dfu_get_status( struct dfu_if *dif, struct dfu_status *status )
+// int dfu_get_status( struct dfu_if *dif, struct dfu_status *status )
+int
+dfu_get_status ( struct maple_device *mp, struct dfu_status *status )
 {
     unsigned char buffer[6];
     int result;
@@ -147,11 +150,11 @@ int dfu_get_status( struct dfu_if *dif, struct dfu_status *status )
     status->bState        = STATE_DFU_ERROR;
     status->iString       = 0;
 
-    result = libusb_control_transfer( dif->dev_handle,
+    result = libusb_control_transfer( mp->devh,
           /* bmRequestType */ LIBUSB_ENDPOINT_IN | LIBUSB_REQUEST_TYPE_CLASS | LIBUSB_RECIPIENT_INTERFACE,
           /* bRequest      */ DFU_GETSTATUS,
           /* wValue        */ 0,
-          /* wIndex        */ dif->interface,
+          /* wIndex        */ mp->interface,
           /* Data          */ buffer,
           /* wLength       */ 6,
                               dfu_timeout );
@@ -343,6 +346,7 @@ const char *dfu_status_to_string(int status)
 	return dfu_status_names[status];
 }
 
+#ifdef notdef /* TJT */
 int dfu_abort_to_idle(struct dfu_if *dif)
 {
 	int ret;
@@ -368,3 +372,6 @@ int dfu_abort_to_idle(struct dfu_if *dif)
 	milli_sleep(dst.bwPollTimeout);
 	return ret;
 }
+#endif
+
+/* THE END */
