@@ -15,6 +15,7 @@
 #include <libusb.h>
 
 #include "util.h"
+#include "usb_dfu.h"
 
 #define MAPLE_VENDOR		0x1eaf
 #define MAPLE_PROD_LOADER	3
@@ -30,10 +31,15 @@ ATTRS{idProduct}=="0003", ATTRS{idVendor}=="1eaf", MODE="664", GROUP="plugdev" S
 ATTRS{idProduct}=="0004", ATTRS{idVendor}=="1eaf", MODE="664", GROUP="plugdev" SYMLINK+="maple"
  */
 
+struct maple_device {
+	struct libusb_device *dev;
+	struct libusb_device_descriptor desc;
+};
+
 int verbose = 0;
 
-void list_maple ( libusb_context *, int );
-int find_maple ( libusb_context * );
+int list_maple ( libusb_context *, int );
+int find_maple ( libusb_context *, struct maple_device * );
 char *find_maple_serial ( void );
 int get_file ( struct dfu_file * );
 
@@ -45,6 +51,24 @@ int get_file ( struct dfu_file * );
 #define MAPLE_LOADER	2
 #define MAPLE_UNKNOWN	3
 
+#ifdef notdef
+/* in usb_dfu.h */
+struct usb_dfu_func_descriptor {
+        uint8_t         bLength;
+        uint8_t         bDescriptorType;
+        uint8_t         bmAttributes;
+#define USB_DFU_CAN_DOWNLOAD    (1 << 0)
+#define USB_DFU_CAN_UPLOAD      (1 << 1)
+#define USB_DFU_MANIFEST_TOL    (1 << 2)
+#define USB_DFU_WILL_DETACH     (1 << 3)
+        uint16_t                wDetachTimeOut;
+        uint16_t                wTransferSize;
+        uint16_t                bcdDFUVersion;
+} __attribute__ ((packed));
+
+#define USB_DT_DFU			0x21
+#endif
+
 void
 error ( char *msg )
 {
@@ -54,13 +78,96 @@ error ( char *msg )
 
 struct dfu_file file;
 
+static void
+extract_dfu ( const char *list, int len, int type, struct usb_dfu_func_descriptor *fp )
+{
+	int xfer_size;
+
+	printf ( "len = %d, sizeof desc = %d\n", len, sizeof(*fp) );
+
+	if ( len != sizeof(*fp) )
+	    return;
+
+	memcpy ( fp, list, len );
+	printf ( "Desc length = %d\n", fp->bLength );
+	printf ( "Desc type = 0x%x\n", fp->bDescriptorType );
+	printf ( "Desc wSize = %d\n", fp->wTransferSize );
+	xfer_size = libusb_le16_to_cpu ( fp->wTransferSize );
+	printf ( "Desc wSize = %d\n", xfer_size );
+}
+
+/* An experiment */
+void
+pickle ( struct maple_device *mp )
+{
+	int i, j, k;
+	int nc, ni, na;
+	struct libusb_config_descriptor *cp;
+	const struct libusb_interface *ip;
+	const struct libusb_interface_descriptor *idp;
+	int s;
+	struct usb_dfu_func_descriptor func_dfu;
+	libusb_device_handle *devh;
+
+	/* Doesn't work */
+	nc = mp->desc.bNumConfigurations;
+	printf ( "Maple has %d configurations\n", nc );
+	for ( i=0; i<nc; i++ ) {
+	    s = libusb_get_config_descriptor ( mp->dev, i, &cp );
+	    if ( s ) {
+		printf ( "Cannot get maple config descriptor 1\n" );
+		break;
+	    }
+	    if ( ! cp ) {
+		printf ( "Empty maple config descriptor\n" );
+		break;
+	    }
+	    printf ( "maple config extra length = %d\n", cp->extra_length );
+
+	    ni = cp->bNumInterfaces;
+	    printf ( "Maple has %d interfaces\n", ni );
+	    for ( j=0; j<ni; j++ ) {
+		ip = &cp->interface[j];
+		if ( ! ip )
+		    break;
+		na = ip->num_altsetting;
+		printf ( "Maple has %d alt settings\n", na );
+		for ( k=0; k<na; k++ ) {
+		    idp = &ip->altsetting[k];
+		    printf ( "Maple alt %d, class = %4x, subclass = %4x\n",
+			k, idp->bInterfaceClass, idp->bInterfaceSubClass );
+		    printf ( "Maple alt %d, extra length = %d\n", k, idp->extra_length );
+		    extract_dfu ( idp->extra, idp->extra_length, USB_DT_DFU, &func_dfu );
+		}
+	    }
+	}
+
+	/* Doesn't work either */
+	s = libusb_open ( mp->dev, &devh );
+	if ( s ) {
+	    printf ( "Cannot open maple device to get config\n" );
+	    return;
+	}
+	s = libusb_get_descriptor ( devh, USB_DT_DFU, 0, (void *) &func_dfu, sizeof(func_dfu) );
+	if ( s ) {
+	    printf ( "Cannot get maple config descriptor 2\n" );
+	    return;
+	}
+	libusb_close ( devh );
+
+	printf ( "Xfer size = %d\n", func_dfu.wTransferSize );
+
+}
+
 int
 main ( int argc, char **argv )
 {
+	struct maple_device maple_device;
 	libusb_context *context;
 	int s;
 	char *ser;
 	int m;
+	int n;
 	char *p;
 
 	file.name = NULL;
@@ -82,8 +189,14 @@ main ( int argc, char **argv )
 	if ( s )
 	    error ( "Cannot init libusb" );
 
-	list_maple ( context, verbose );
-	m = find_maple ( context );
+	n = list_maple ( context, verbose );
+	if ( n > 1 ) {
+	    printf ( "Warning !!!\n" );
+	    printf ( " multiple (namely %d) maple devices discovered\n" );
+	    printf ( " the first encountered will be used, which may not be right\n" );
+	}
+
+	m = find_maple ( context, &maple_device );
 	// printf ( "Scan found: %d\n", m );
 
 	if ( get_file ( &file ) ) {
@@ -108,9 +221,6 @@ main ( int argc, char **argv )
 		printf ( "No maple device found\n" );
 	}
 
-	// XXX = report more than one maple on bus
-	// XXX
-
 	if ( m == MAPLE_SERIAL ) {
 	    ser = find_maple_serial ();
 	    if ( ! ser ) 
@@ -119,10 +229,18 @@ main ( int argc, char **argv )
 		printf ( "Found maple device: %s\n", ser );
 	}
 
+	if ( m == MAPLE_LOADER ) {
+	    pickle ( &maple_device );
+	}
+
 	libusb_exit(context);
+	printf ( "All done !!\n" );
 	return 0;
 }
 
+/* We don't read any fancy DFU format file,
+ * just a binary image.
+ */
 int
 get_file ( struct dfu_file *file )
 {
@@ -193,7 +311,7 @@ get_string ( struct libusb_device *dev, int index )
  * In lieu of the following, a person could just run lsusb and write
  *  a python script to capture and parse the output.
  */
-void
+int
 list_maple ( libusb_context *context, int verb )
 {
 	struct libusb_device_descriptor desc;
@@ -202,9 +320,11 @@ list_maple ( libusb_context *context, int verb )
 	ssize_t ndev;
 	int i;
 	int s;
+	int num = 0;
 
 	ndev = libusb_get_device_list ( context, &list );
 	// printf ( "%d USB devices in list\n", ndev );
+
 	for ( i=0; i<ndev; i++ ) {
 	    dev = list[i];
 	    s = libusb_get_device_descriptor(dev, &desc);
@@ -220,31 +340,32 @@ list_maple ( libusb_context *context, int verb )
 #endif
 	    if ( desc.idVendor != MAPLE_VENDOR ) {
 		if ( verb ) 
-		    printf("Vendor:Device = %04x:%04x -- %s %s\n", 
+		    printf("Vendor:Device = %04x:%04x\n", 
 			desc.idVendor, desc.idProduct );
 	    } else {
+		num++;
 		if ( desc.idProduct == MAPLE_PROD_SERIAL )
-		    printf("Vendor:Device = %04x:%04x -- %s %s - Maple serial\n", 
+		    printf("Vendor:Device = %04x:%04x ---- Maple serial\n", 
 			desc.idVendor, desc.idProduct );
 		else if ( desc.idProduct == MAPLE_PROD_LOADER )
-		    printf("Vendor:Device = %04x:%04x -- %s %s - Maple loader\n", 
+		    printf("Vendor:Device = %04x:%04x ---- Maple loader\n", 
 			desc.idVendor, desc.idProduct );
 		else
-		    printf("Vendor:Device = %04x:%04x -- %s %s - Maple in unknow mode !?\n", 
+		    printf("Vendor:Device = %04x:%04x ---- Maple in unknown mode !?\n", 
 			desc.idVendor, desc.idProduct );
 	    }
 	}
 	libusb_free_device_list(list, 0);
+	return num;
 }
 
 /* a modified version of the above, but instead of listing
  * everything, we just scan for the Maple vendor.
+ *
  * XXX - we stop at the first match for the Maple Vendor.
- *  if there are more than one maple devices online
- *  this may not be right, we ought to at least warn.
  */
 int
-find_maple ( libusb_context *context )
+find_maple ( libusb_context *context, struct maple_device *mp )
 {
 	struct libusb_device_descriptor desc;
 	struct libusb_device *dev;
@@ -267,16 +388,22 @@ find_maple ( libusb_context *context )
 	    if ( desc.idVendor != MAPLE_VENDOR )
 		continue;
 	    // printf("Vendor:Device = %04x:%04x\n", desc.idVendor, desc.idProduct );
+
 	    if ( desc.idProduct == MAPLE_PROD_SERIAL )
 		rv = MAPLE_SERIAL;
 	    else if ( desc.idProduct == MAPLE_PROD_LOADER )
 		rv = MAPLE_LOADER;
 	    else
 		rv = MAPLE_UNKNOWN;
+
+	    /* Return first match */
+	    mp->dev = libusb_ref_device ( dev );
+	    memcpy ( &mp->desc, &desc, sizeof(desc) );
+	    return rv;
 	}
 
 	libusb_free_device_list(list, 0);
-	return rv;
+	return MAPLE_NONE;
 }
 
 /* The idea here is to open
