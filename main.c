@@ -36,7 +36,10 @@ ATTRS{idProduct}=="0004", ATTRS{idVendor}=="1eaf", MODE="664", GROUP="plugdev" S
 struct maple_device {
 	struct libusb_device *dev;
 	struct libusb_device_descriptor desc;
+	libusb_device_handle *devh;
 	int xfer_size;
+	int interface;
+	int alt;
 };
 
 int verbose = 0;
@@ -59,6 +62,47 @@ error ( char *msg )
 {
 	fprintf ( stderr, "%s\n", msg );
 	exit ( 1 );
+}
+
+/* The maple DFU loader has one interface.
+ */
+int
+maple_open ( struct maple_device *mp )
+{
+	int s;
+
+	mp->xfer_size = MAPLE_XFER_SIZE;
+	mp->interface = 0;
+	mp->alt = 1;
+
+	mp->devh = NULL;
+	s = libusb_open ( mp->dev, &mp->devh );
+	if ( s || ! mp->devh ) {
+	    printf ( "Maple open fails to open device\n" );
+	    return 1;
+	}
+
+	s = libusb_claim_interface ( mp->devh, mp->interface);
+	if ( s < 0 ) {
+	    printf ( "Maple open cannot claim interface\n" );
+	    return 1;
+	}
+
+	s = libusb_set_interface_alt_setting ( mp->devh, mp->interface, mp->alt );
+	if ( s < 0 ) {
+	    printf ( "Maple open cannot do alt setting %d\n", mp->alt );
+	    return 1;
+	}
+
+	return 0;
+}
+
+void
+maple_close ( struct maple_device *mp )
+{
+	if ( mp->devh )
+	    libusb_close ( mp->devh );
+	mp->devh = NULL;
 }
 
 struct dfu_file file;
@@ -101,7 +145,6 @@ main ( int argc, char **argv )
 	}
 
 	m = find_maple ( context, &maple_device );
-	maple_device.xfer_size = MAPLE_XFER_SIZE;
 
 	if ( get_file ( &file ) ) {
 	    printf ( "Cannot open file: %s\n", file.name );
@@ -135,6 +178,14 @@ main ( int argc, char **argv )
 
 	if ( m == MAPLE_LOADER ) {
 	    // pickle ( &maple_device );
+	    s = maple_open ( &maple_device );
+	    if ( s == 0 ) {
+		s = 0;
+		// s = dfuload_do_dnload ( dfu_root, transfer_size, &file);
+		if ( s < 0 )
+		    printf ( "Download reported trouble\n" );
+	    }
+	    maple_close ( &maple_device );
 	}
 
 	libusb_exit(context);
