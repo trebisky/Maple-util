@@ -15,11 +15,13 @@
 #include <libusb.h>
 
 #include "util.h"
-#include "usb_dfu.h"
+// #include "usb_dfu.h"
 
 #define MAPLE_VENDOR		0x1eaf
 #define MAPLE_PROD_LOADER	3
 #define MAPLE_PROD_SERIAL	4
+
+#define MAPLE_XFER_SIZE		1024
 
 /* To allow this script to get access to the Maple DFU loader
  * without having to run as root all the time, put the following
@@ -34,6 +36,7 @@ ATTRS{idProduct}=="0004", ATTRS{idVendor}=="1eaf", MODE="664", GROUP="plugdev" S
 struct maple_device {
 	struct libusb_device *dev;
 	struct libusb_device_descriptor desc;
+	int xfer_size;
 };
 
 int verbose = 0;
@@ -51,24 +54,6 @@ int get_file ( struct dfu_file * );
 #define MAPLE_LOADER	2
 #define MAPLE_UNKNOWN	3
 
-#ifdef notdef
-/* in usb_dfu.h */
-struct usb_dfu_func_descriptor {
-        uint8_t         bLength;
-        uint8_t         bDescriptorType;
-        uint8_t         bmAttributes;
-#define USB_DFU_CAN_DOWNLOAD    (1 << 0)
-#define USB_DFU_CAN_UPLOAD      (1 << 1)
-#define USB_DFU_MANIFEST_TOL    (1 << 2)
-#define USB_DFU_WILL_DETACH     (1 << 3)
-        uint16_t                wDetachTimeOut;
-        uint16_t                wTransferSize;
-        uint16_t                bcdDFUVersion;
-} __attribute__ ((packed));
-
-#define USB_DT_DFU			0x21
-#endif
-
 void
 error ( char *msg )
 {
@@ -77,87 +62,6 @@ error ( char *msg )
 }
 
 struct dfu_file file;
-
-static void
-extract_dfu ( const char *list, int len, int type, struct usb_dfu_func_descriptor *fp )
-{
-	int xfer_size;
-
-	printf ( "len = %d, sizeof desc = %d\n", len, sizeof(*fp) );
-
-	if ( len != sizeof(*fp) )
-	    return;
-
-	memcpy ( fp, list, len );
-	printf ( "Desc length = %d\n", fp->bLength );
-	printf ( "Desc type = 0x%x\n", fp->bDescriptorType );
-	printf ( "Desc wSize = %d\n", fp->wTransferSize );
-	xfer_size = libusb_le16_to_cpu ( fp->wTransferSize );
-	printf ( "Desc wSize = %d\n", xfer_size );
-}
-
-/* An experiment */
-void
-pickle ( struct maple_device *mp )
-{
-	int i, j, k;
-	int nc, ni, na;
-	struct libusb_config_descriptor *cp;
-	const struct libusb_interface *ip;
-	const struct libusb_interface_descriptor *idp;
-	int s;
-	struct usb_dfu_func_descriptor func_dfu;
-	libusb_device_handle *devh;
-
-	/* Doesn't work */
-	nc = mp->desc.bNumConfigurations;
-	printf ( "Maple has %d configurations\n", nc );
-	for ( i=0; i<nc; i++ ) {
-	    s = libusb_get_config_descriptor ( mp->dev, i, &cp );
-	    if ( s ) {
-		printf ( "Cannot get maple config descriptor 1\n" );
-		break;
-	    }
-	    if ( ! cp ) {
-		printf ( "Empty maple config descriptor\n" );
-		break;
-	    }
-	    printf ( "maple config extra length = %d\n", cp->extra_length );
-
-	    ni = cp->bNumInterfaces;
-	    printf ( "Maple has %d interfaces\n", ni );
-	    for ( j=0; j<ni; j++ ) {
-		ip = &cp->interface[j];
-		if ( ! ip )
-		    break;
-		na = ip->num_altsetting;
-		printf ( "Maple has %d alt settings\n", na );
-		for ( k=0; k<na; k++ ) {
-		    idp = &ip->altsetting[k];
-		    printf ( "Maple alt %d, class = %4x, subclass = %4x\n",
-			k, idp->bInterfaceClass, idp->bInterfaceSubClass );
-		    printf ( "Maple alt %d, extra length = %d\n", k, idp->extra_length );
-		    extract_dfu ( idp->extra, idp->extra_length, USB_DT_DFU, &func_dfu );
-		}
-	    }
-	}
-
-	/* Doesn't work either */
-	s = libusb_open ( mp->dev, &devh );
-	if ( s ) {
-	    printf ( "Cannot open maple device to get config\n" );
-	    return;
-	}
-	s = libusb_get_descriptor ( devh, USB_DT_DFU, 0, (void *) &func_dfu, sizeof(func_dfu) );
-	if ( s ) {
-	    printf ( "Cannot get maple config descriptor 2\n" );
-	    return;
-	}
-	libusb_close ( devh );
-
-	printf ( "Xfer size = %d\n", func_dfu.wTransferSize );
-
-}
 
 int
 main ( int argc, char **argv )
@@ -197,7 +101,7 @@ main ( int argc, char **argv )
 	}
 
 	m = find_maple ( context, &maple_device );
-	// printf ( "Scan found: %d\n", m );
+	maple_device.xfer_size = MAPLE_XFER_SIZE;
 
 	if ( get_file ( &file ) ) {
 	    printf ( "Cannot open file: %s\n", file.name );
@@ -230,7 +134,7 @@ main ( int argc, char **argv )
 	}
 
 	if ( m == MAPLE_LOADER ) {
-	    pickle ( &maple_device );
+	    // pickle ( &maple_device );
 	}
 
 	libusb_exit(context);
@@ -478,6 +382,138 @@ find_maple_serial ( void )
 
 	return NULL;
 }
+
+#ifdef notdef
+/* from usb_dfu.h */
+struct usb_dfu_func_descriptor {
+        uint8_t         bLength;
+        uint8_t         bDescriptorType;
+        uint8_t         bmAttributes;
+#define USB_DFU_CAN_DOWNLOAD    (1 << 0)
+#define USB_DFU_CAN_UPLOAD      (1 << 1)
+#define USB_DFU_MANIFEST_TOL    (1 << 2)
+#define USB_DFU_WILL_DETACH     (1 << 3)
+        uint16_t                wDetachTimeOut;
+        uint16_t                wTransferSize;
+        uint16_t                bcdDFUVersion;
+} __attribute__ ((packed));
+
+/* We could actually have a list that we need to loop through
+ * The Maple just gives us a single 9 byte descriptor.
+ */
+static void
+extract_dfu ( const char *list, int len, int type, struct usb_dfu_func_descriptor *fp )
+{
+	int xfer_size;
+
+	printf ( "len = %d, sizeof desc = %d\n", len, sizeof(*fp) );
+
+	if ( len != sizeof(*fp) )
+	    return;
+
+	memcpy ( fp, list, len );
+	printf ( "Desc length = %d\n", fp->bLength );
+	printf ( "Desc type = 0x%x\n", fp->bDescriptorType );
+	printf ( "Desc wSize = %d\n", fp->wTransferSize );
+	xfer_size = libusb_le16_to_cpu ( fp->wTransferSize );
+	printf ( "Desc wSize = %d\n", xfer_size );
+}
+
+
+#define USB_DT_DFU			0x21
+
+/* An experiment.
+ * This scans through the USB config information
+ * to get a USB_DT_DFU interface descriptor.
+ * This contains the transfer count for our device.
+ * A generic utility would need to do this, but we can
+ * just wire in the number since we only ever intend
+ * to work with the maple boot loader.
+ * The Maple loader has 1 configuration and 1 interface.
+ * The interface has 2 alt settings.
+ * alt setting 0 is "load to RAM" and as near as I
+ *  can tell, was an unfinished idea that does not work.
+ * alt setting 1 is "load to flash" and is what we use.
+ * Here is the verbatim output from this code.
+ *
+Maple has 1 configurations
+maple config extra length = 0
+Maple has 1 interfaces
+Maple has 2 alt settings
+Maple alt 0, class =   fe, subclass =    1
+Maple alt 0, extra length = 0
+len = 0, sizeof desc = 9
+Maple alt 1, class =   fe, subclass =    1
+Maple alt 1, extra length = 9
+len = 9, sizeof desc = 9
+Desc length = 9
+Desc type = 0x21
+Desc wSize = 1024
+Desc wSize = 1024
+Cannot get maple config descriptor 2
+ */
+void
+pickle ( struct maple_device *mp )
+{
+	int i, j, k;
+	int nc, ni, na;
+	struct libusb_config_descriptor *cp;
+	const struct libusb_interface *ip;
+	const struct libusb_interface_descriptor *idp;
+	int s;
+	struct usb_dfu_func_descriptor func_dfu;
+	libusb_device_handle *devh;
+
+	/* Doesn't work */
+	nc = mp->desc.bNumConfigurations;
+	printf ( "Maple has %d configurations\n", nc );
+	for ( i=0; i<nc; i++ ) {
+	    s = libusb_get_config_descriptor ( mp->dev, i, &cp );
+	    if ( s ) {
+		printf ( "Cannot get maple config descriptor 1\n" );
+		break;
+	    }
+	    if ( ! cp ) {
+		printf ( "Empty maple config descriptor\n" );
+		break;
+	    }
+	    printf ( "maple config extra length = %d\n", cp->extra_length );
+
+	    ni = cp->bNumInterfaces;
+	    printf ( "Maple has %d interfaces\n", ni );
+	    for ( j=0; j<ni; j++ ) {
+		ip = &cp->interface[j];
+		if ( ! ip )
+		    break;
+		na = ip->num_altsetting;
+		printf ( "Maple has %d alt settings\n", na );
+		for ( k=0; k<na; k++ ) {
+		    idp = &ip->altsetting[k];
+		    printf ( "Maple alt %d, class = %4x, subclass = %4x\n",
+			k, idp->bInterfaceClass, idp->bInterfaceSubClass );
+		    printf ( "Maple alt %d, extra length = %d\n", k, idp->extra_length );
+		    extract_dfu ( idp->extra, idp->extra_length, USB_DT_DFU, &func_dfu );
+		}
+	    }
+	}
+
+	/* Doesn't work either */
+	s = libusb_open ( mp->dev, &devh );
+	if ( s ) {
+	    printf ( "Cannot open maple device to get config\n" );
+	    return;
+	}
+	s = libusb_get_descriptor ( devh, USB_DT_DFU, 0, (void *) &func_dfu, sizeof(func_dfu) );
+	if ( s ) {
+	    printf ( "Cannot get maple config descriptor 2\n" );
+	    return;
+	}
+	libusb_close ( devh );
+
+	printf ( "Xfer size = %d\n", func_dfu.wTransferSize );
+
+}
+#endif
 
 /* ============================================================= */
 
