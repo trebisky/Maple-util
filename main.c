@@ -100,6 +100,8 @@ maple_open ( struct maple_device *mp )
 void
 maple_close ( struct maple_device *mp )
 {
+	libusb_release_interface ( mp->devh, mp->interface );
+
 	if ( mp->devh )
 	    libusb_close ( mp->devh );
 	mp->devh = NULL;
