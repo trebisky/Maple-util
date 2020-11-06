@@ -23,6 +23,9 @@
 
 #define MAPLE_XFER_SIZE		1024
 
+// static char *blink_file = "blink.bin";
+static char *blink_file = "bogus.bin";
+
 /* To allow this script to get access to the Maple DFU loader
  * without having to run as root all the time, put the following
  * into a file named 45-maple.rules and put that file
@@ -126,6 +129,7 @@ main ( int argc, char **argv )
 	char *p;
 
 	file.name = NULL;
+
 	argc--;
 	argv++;
 	while ( argc-- ) {
@@ -152,6 +156,8 @@ main ( int argc, char **argv )
 	}
 
 	m = find_maple ( context, &maple_device );
+
+	file.name = blink_file;
 
 	if ( get_file ( &file ) ) {
 	    printf ( "Cannot open file: %s\n", file.name );
@@ -212,7 +218,7 @@ get_file ( struct dfu_file *file )
 	int n;
 
 	if ( ! file->name )
-	    return 0;
+	    return 1;
 
 	if ( stat ( file->name, &fstat ) < 0 )
 	    return 1;

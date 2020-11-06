@@ -86,7 +86,7 @@ dfuload_do_dnload (struct maple_device *mp, struct dfu_file *file)
 		    chunk_size, transaction++, chunk_size ? buf : NULL);
 		if (ret < 0) {
 			// warnx("Error during download");
-			printf("Error during download");
+			printf("Error during download\n");
 			goto out;
 		}
 		bytes_sent += chunk_size;
@@ -99,7 +99,7 @@ dfuload_do_dnload (struct maple_device *mp, struct dfu_file *file)
 				// errx(EX_IOERR, "Error during download get_status");
 				// errx would exit, original code had the goto,
 				// probably to suppress compiler warning.
-				printf ("Error during download get_status");
+				printf ("Error during download get_status\n");
 				goto out;
 			}
 
@@ -128,7 +128,7 @@ dfuload_do_dnload (struct maple_device *mp, struct dfu_file *file)
 	    0, transaction, NULL);
 	if (ret < 0) {
 		// errx(EX_IOERR, "Error sending completion packet");
-		printf ("Error sending completion packet");
+		printf ("Error sending completion packet\n");
 		// errx would exit, original code had the goto,
 		// probably to suppress compiler warning.
 		goto out;
@@ -144,7 +144,7 @@ get_status:
 	ret = dfu_get_status ( mp, &dst);
 	if (ret < 0) {
 		// warnx("unable to read DFU status after completion");
-		printf("unable to read DFU status after completion");
+		printf("unable to read DFU status after completion\n");
 		goto out;
 	}
 	printf("state(%u) = %s, status(%u) = %s\n", dst.bState,
@@ -191,7 +191,7 @@ int dfuload_do_upload(struct dfu_if *dif, int xfer_size,
 		    xfer_size, transaction++, buf);
 		if (rc < 0) {
 			// warnx("Error during upload");
-			printf("Error during upload");
+			printf("Error during upload\n");
 			ret = rc;
 			goto out_free;
 		}
@@ -201,7 +201,7 @@ int dfuload_do_upload(struct dfu_if *dif, int xfer_size,
 
 		if (total_bytes < 0) {
 			// errx(EX_SOFTWARE, "Received too many bytes (wraparound)");
-			printf("Received too many bytes (wraparound)");
+			printf("Received too many bytes (wraparound)\n");
 			goto out_free:
 		}
 
@@ -223,7 +223,7 @@ out_free:
 		printf("Received a total of %i bytes\n", total_bytes);
 	if (expected_size != 0 && total_bytes != expected_size) {
 		// errx(EX_SOFTWARE, "Unexpected number of bytes uploaded from device");
-		printf("Unexpected number of bytes uploaded from device");
+		printf("Unexpected number of bytes uploaded from device\n");
 	}
 	return ret;
 }
