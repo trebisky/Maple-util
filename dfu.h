@@ -83,6 +83,7 @@ struct dfu_status {
     unsigned char iString;
 };
 
+#ifdef notdef
 struct dfu_if {
     struct usb_dfu_func_descriptor func_dfu;
     uint16_t quirks;
@@ -103,14 +104,19 @@ struct dfu_if {
     struct dfu_if *next;
 };
 
+int dfu_abort_to_idle( struct dfu_if *dif);
+#endif
+
 int dfu_detach( libusb_device_handle *device,
                 const unsigned short interface,
                 const unsigned short timeout );
+
 int dfu_download( libusb_device_handle *device,
                   const unsigned short interface,
                   const unsigned short length,
                   const unsigned short transaction,
                   unsigned char* data );
+
 int dfu_upload( libusb_device_handle *device,
                 const unsigned short interface,
                 const unsigned short length,
@@ -124,9 +130,9 @@ int dfu_clear_status( libusb_device_handle *device,
                       const unsigned short interface );
 int dfu_get_state( libusb_device_handle *device,
                    const unsigned short interface );
+
 int dfu_abort( libusb_device_handle *device,
                const unsigned short interface );
-int dfu_abort_to_idle( struct dfu_if *dif);
 
 const char *dfu_state_to_string( int state );
 

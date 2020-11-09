@@ -3,6 +3,10 @@
  *
  * Tool to do DFU downloads over USB to my devices
  * that have Maple bootloaders.
+ *
+ * TODO - 
+ * - read elf file, verify link address 08005000
+ * - perform serial reset if maple found in serial mode.
  */
 #include <stdlib.h>
 #include <stdio.h>
@@ -23,8 +27,8 @@
 
 #define MAPLE_XFER_SIZE		1024
 
-// static char *blink_file = "blink.bin";
-static char *blink_file = "bogus.bin";
+static char *blink_file = "blink.bin";
+// static char *blink_file = "bogus.bin";
 
 /* To allow this script to get access to the Maple DFU loader
  * without having to run as root all the time, put the following
@@ -35,6 +39,23 @@ ATTRS{idProduct}=="1002", ATTRS{idVendor}=="0110", MODE="664", GROUP="plugdev"
 ATTRS{idProduct}=="0003", ATTRS{idVendor}=="1eaf", MODE="664", GROUP="plugdev" SYMLINK+="maple"
 ATTRS{idProduct}=="0004", ATTRS{idVendor}=="1eaf", MODE="664", GROUP="plugdev" SYMLINK+="maple"
  */
+
+/* A successful download of my tiny blink demo looks like:
+Sending 368 bytes
+ - status 368
+Ask for status
+ - status response: 6
+Ask for status
+ - status response: 6
+Sending zero size packet
+ - status 0
+Ask for status
+ - status response: 6
+state(8) = dfuMANIFEST-WAIT-RESET, status(0) = No error condition is present
+Done!
+All done !!
+ */
+
 
 #ifdef notdef
 /* Now in maple.h */
@@ -54,8 +75,10 @@ int list_maple ( libusb_context *, int );
 int find_maple ( libusb_context *, struct maple_device * );
 char *find_maple_serial ( void );
 int get_file ( struct dfu_file * );
+void perform_reset ( struct maple_device * );
 
 int dfuload_do_dnload ( struct maple_device *, struct dfu_file * );
+int dfu_detach( libusb_device_handle *, const unsigned short, const unsigned short );
 
 /* return codes from find_maple()
  * could be an enum, but I'm too lazy
@@ -198,6 +221,8 @@ main ( int argc, char **argv )
 		s = dfuload_do_dnload ( &maple_device, &file);
 		if ( s < 0 )
 		    printf ( "Download reported trouble\n" );
+		printf ( "%d bytes sent\n", s );
+		perform_reset ( &maple_device );
 	    }
 	    maple_close ( &maple_device );
 	}
@@ -205,6 +230,24 @@ main ( int argc, char **argv )
 	libusb_exit(context);
 	printf ( "All done !!\n" );
 	return 0;
+}
+
+#define DETACH_TIMEOUT	1000
+
+void
+perform_reset ( struct maple_device *mp )
+{
+	int s;
+
+	printf ( "Performing device reset\n" );
+
+	s = dfu_detach ( mp->devh, mp->interface, DETACH_TIMEOUT );
+	if ( s < 0 )
+	    printf ( "Detach failed\n" );
+
+	s = libusb_reset_device ( mp->devh );
+	if ( s < 0 )
+	    printf ( "Reset failed: %d\n", s );
 }
 
 /* We don't read any fancy DFU format file,

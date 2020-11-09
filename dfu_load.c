@@ -63,7 +63,8 @@ dfuload_do_dnload (struct maple_device *mp, struct dfu_file *file)
 	int ret;
 	int xfer_size = mp->xfer_size;
 
-	printf("Copying data from PC to DFU device\n");
+	// printf("Copying data from PC to DFU device\n");
+	printf ( "Downloading %d bytes\n", file->size );
 
 	buf = file->buf;
 	//expected_size = file->size.total - file->size.suffix;
@@ -82,8 +83,10 @@ dfuload_do_dnload (struct maple_device *mp, struct dfu_file *file)
 			chunk_size = xfer_size;
 
 		// ret = dfu_download(dif->dev_handle, dif->interface,
+		printf ( "Sending %d bytes\n", chunk_size );
 		ret = dfu_download ( mp->devh, mp->interface,
 		    chunk_size, transaction++, chunk_size ? buf : NULL);
+		printf ( " - status %d\n", ret );
 		if (ret < 0) {
 			// warnx("Error during download");
 			printf("Error during download\n");
@@ -94,7 +97,10 @@ dfuload_do_dnload (struct maple_device *mp, struct dfu_file *file)
 
 		do {
 			// ret = dfu_get_status(dif, &dst);
+			printf ( "Ask for status\n" );
 			ret = dfu_get_status(mp, &dst);
+			printf ( " - status response: %d\n", ret );
+
 			if (ret < 0) {
 				// errx(EX_IOERR, "Error during download get_status");
 				// errx would exit, original code had the goto,
@@ -124,8 +130,10 @@ dfuload_do_dnload (struct maple_device *mp, struct dfu_file *file)
 	}
 
 	/* send one zero sized download request to signalize end */
+	printf ( "Sending zero size packet\n" );
 	ret = dfu_download(mp->devh, mp->interface,
 	    0, transaction, NULL);
+	printf ( " - status %d\n", ret );
 	if (ret < 0) {
 		// errx(EX_IOERR, "Error sending completion packet");
 		printf ("Error sending completion packet\n");
@@ -141,16 +149,23 @@ dfuload_do_dnload (struct maple_device *mp, struct dfu_file *file)
 
 get_status:
 	/* Transition to MANIFEST_SYNC state */
+	printf ( "Ask for status\n" );
 	ret = dfu_get_status ( mp, &dst);
+	printf ( " - status response: %d\n", ret );
 	if (ret < 0) {
 		// warnx("unable to read DFU status after completion");
 		printf("unable to read DFU status after completion\n");
 		goto out;
 	}
-	printf("state(%u) = %s, status(%u) = %s\n", dst.bState,
-		dfu_state_to_string(dst.bState), dst.bStatus,
-		dfu_status_to_string(dst.bStatus));
 
+	/* I see here:
+	state(8) = dfuMANIFEST-WAIT-RESET
+	status(0) = No error condition is present
+	 */
+	printf("state(%u) = %s\n", dst.bState, dfu_state_to_string(dst.bState) );
+	printf("status(%u) = %s\n", dst.bStatus, dfu_status_to_string(dst.bStatus) );
+
+#ifdef notdef
 	milli_sleep(dst.bwPollTimeout);
 
 	/* FIXME: deal correctly with ManifestationTolerant=0 / WillDetach bits */
@@ -165,6 +180,7 @@ get_status:
 	case DFU_STATE_dfuIDLE:
 		break;
 	}
+#endif
 	printf("Done!\n");
 
 out:
