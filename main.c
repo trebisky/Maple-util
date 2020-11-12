@@ -254,10 +254,9 @@ main ( int argc, char **argv )
 	    // pickle ( &maple_device );
 	    s = maple_open ( &maple_device );
 	    if ( s == 0 ) {
-		s = 0;
 		s = dfuload_do_dnload ( &maple_device, &file);
-		if ( s < 0 )
-		    printf ( "Download reported trouble\n" );
+		if ( s != file.size )
+		    printf ( "Download gave trouble\n" );
 		printf ( "%d bytes sent\n", s );
 		perform_reset ( &maple_device );
 	    }

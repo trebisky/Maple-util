@@ -13,5 +13,8 @@ maple-util:	$(OBJS)
 
 main.o dfu_load.o: maple.h
 
+install:	maple-util
+	cp maple-util /usr/local/bin
+
 clean:
 	rm -f *.o maple-util

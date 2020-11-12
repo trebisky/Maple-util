@@ -86,10 +86,11 @@ dfuload_do_dnload (struct maple_device *mp, struct dfu_file *file)
 			chunk_size = xfer_size;
 
 		// ret = dfu_download(dif->dev_handle, dif->interface,
-		printf ( "Sending %d bytes\n", chunk_size );
+		// printf ( "Sending %d bytes\n", chunk_size );
 		ret = dfu_download ( mp->devh, mp->interface,
 		    chunk_size, transaction++, chunk_size ? buf : NULL);
-		printf ( " - status %d\n", ret );
+		// typically returns number of bytes sent
+		// printf ( " - download returns %d\n", ret );
 		if (ret < 0) {
 			// warnx("Error during download");
 			printf("Error during download\n");
@@ -100,9 +101,10 @@ dfuload_do_dnload (struct maple_device *mp, struct dfu_file *file)
 
 		do {
 			// ret = dfu_get_status(dif, &dst);
-			printf ( "Ask for status\n" );
+			// printf ( "Ask for status\n" );
 			ret = dfu_get_status(mp, &dst);
-			printf ( " - status response: %d\n", ret );
+			// always returns 6
+			// printf ( " - status response: %d\n", ret );
 
 			if (ret < 0) {
 				// errx(EX_IOERR, "Error during download get_status");
@@ -135,10 +137,11 @@ dfuload_do_dnload (struct maple_device *mp, struct dfu_file *file)
 	}
 
 	/* send one zero sized download request to signalize end */
-	printf ( "Sending zero size packet\n" );
+	// printf ( "Sending zero size packet\n" );
 	ret = dfu_download(mp->devh, mp->interface,
 	    0, transaction, NULL);
-	printf ( " - status %d\n", ret );
+	// reports "0"
+	//printf ( " - status %d\n", ret );
 	if (ret < 0) {
 		// errx(EX_IOERR, "Error sending completion packet");
 		printf ("Error sending completion packet\n");
@@ -154,9 +157,10 @@ dfuload_do_dnload (struct maple_device *mp, struct dfu_file *file)
 
 get_status:
 	/* Transition to MANIFEST_SYNC state */
-	printf ( "Ask for status\n" );
+	// printf ( "Ask for status\n" );
 	ret = dfu_get_status ( mp, &dst);
-	printf ( " - status response: %d\n", ret );
+	// returns 6
+	// printf ( " - status response: %d\n", ret );
 	if (ret < 0) {
 		// warnx("unable to read DFU status after completion");
 		printf("unable to read DFU status after completion\n");
@@ -166,9 +170,10 @@ get_status:
 	/* I see here:
 	state(8) = dfuMANIFEST-WAIT-RESET
 	status(0) = No error condition is present
+	(nothing here I find particularly interesting)
 	 */
-	printf("state(%u) = %s\n", dst.bState, dfu_state_to_string(dst.bState) );
-	printf("status(%u) = %s\n", dst.bStatus, dfu_status_to_string(dst.bStatus) );
+	// printf("state(%u) = %s\n", dst.bState, dfu_state_to_string(dst.bState) );
+	// printf("status(%u) = %s\n", dst.bStatus, dfu_status_to_string(dst.bStatus) );
 
 #ifdef notdef
 	milli_sleep(dst.bwPollTimeout);
@@ -186,7 +191,7 @@ get_status:
 		break;
 	}
 #endif
-	printf("Done!\n");
+	// printf( " Download done!\n" );
 
 out:
 	return bytes_sent;
@@ -274,9 +279,12 @@ dfu_progress_bar(const char *desc, unsigned long curr, unsigned long max)
 	progress = (PROGRESS_BAR_WIDTH * curr) / max;
 	if (progress > PROGRESS_BAR_WIDTH)
 		progress = PROGRESS_BAR_WIDTH;
+
+	/* nothing would be updated */
 	if (progress == last_progress &&
 	    curr_time == last_time)
 		return;
+
 	last_progress = progress;
 	last_time = curr_time;
 
@@ -290,6 +298,7 @@ dfu_progress_bar(const char *desc, unsigned long curr, unsigned long max)
 
 	printf("\r%s\t[%s] %3ld%% %12ld bytes", desc, buf,
 	    (100ULL * curr) / max, curr);
+	fflush(stdout);
 
 	if (progress == PROGRESS_BAR_WIDTH)
 		printf("\n%s done.\n", desc);
