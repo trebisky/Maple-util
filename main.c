@@ -69,13 +69,14 @@ struct maple_device {
 };
 #endif
 
-int verbose = 0;
-
 int list_maple ( libusb_context *, int );
 int find_maple ( libusb_context *, struct maple_device * );
 char *find_maple_serial ( void );
 int get_file ( struct dfu_file * );
 void perform_reset ( struct maple_device * );
+int serial_trigger ( char * );
+int wait_for_loader ( libusb_context * );
+void milli_sleep ( int );
 
 int dfuload_do_dnload ( struct maple_device *, struct dfu_file * );
 int dfu_detach( libusb_device_handle *, const unsigned short, const unsigned short );
@@ -140,6 +141,18 @@ maple_close ( struct maple_device *mp )
 
 struct dfu_file file;
 
+int do_download = 1;
+
+int verbose = 0;
+int list_only = 0;
+
+
+/* Options - 
+ *
+ * -vvvv - set verbosity
+ * -l = list only
+ */
+
 int
 main ( int argc, char **argv )
 {
@@ -159,12 +172,16 @@ main ( int argc, char **argv )
 	    p = *argv++;
 	    if ( *p == '-' ) {
 		p++;
-		while ( *p && *p++ == 'v' )
+		while ( *p && *p == 'v' ) {
+		    p++;
 		    verbose++;
-		continue;
+		}
+		if ( *p && *p == 'l' )
+		    list_only = 1;
+	    } else {
+		file.name = p;
+		printf ( "User filename: %s\n", file.name );
 	    }
-
-	    file.name = p;
 	}
 
 	s = libusb_init(&context);
@@ -178,16 +195,7 @@ main ( int argc, char **argv )
 	    printf ( " the first encountered will be used, which may not be right\n" );
 	}
 
-	m = find_maple ( context, &maple_device );
-
-	file.name = blink_file;
-
-	if ( get_file ( &file ) ) {
-	    printf ( "Cannot open file: %s\n", file.name );
-	    error ( "Abandoning ship" );
-	}
-	if ( file.name && verbose )
-	    printf ( "Read %d bytes from: %s\n", file.size, file.name );
+	m = find_maple ( context, NULL );
 
 	switch ( m ) {
 	    case MAPLE_SERIAL:
@@ -198,11 +206,27 @@ main ( int argc, char **argv )
 		break;
 	    case MAPLE_UNKNOWN:
 		printf ( "Maple device in some unknown mode !!?\n" );
-		break;
+		return 0;
 	    case MAPLE_NONE:
 	    default:
 		printf ( "No maple device found\n" );
+		return 0;
 	}
+
+	if ( list_only ) {
+	    // milli_sleep ( 100 );
+	    exit ( 0 );
+	}
+
+	file.name = blink_file;
+
+	if ( get_file ( &file ) ) {
+	    printf ( "Cannot open file: %s\n", file.name );
+	    error ( "Abandoning ship" );
+	}
+	if ( file.name && verbose )
+	    printf ( "Read %d bytes from: %s\n", file.size, file.name );
+
 
 	if ( m == MAPLE_SERIAL ) {
 	    ser = find_maple_serial ();
@@ -210,14 +234,27 @@ main ( int argc, char **argv )
 		printf ( "No maple device found\n" );
 	    else
 		printf ( "Found maple device: %s\n", ser );
+	    if ( ! serial_trigger ( ser ) ) {
+		printf ( "Failed to trigger USB loader\n" );
+		exit ( 1 );
+	    }
+	    wait_for_loader ( context );
 	}
 
-	if ( m == MAPLE_LOADER ) {
+	/* Get maple device and verify we are in
+	 * DFU download mode.
+	 */
+	m = find_maple ( context, &maple_device );
+	if ( m != MAPLE_LOADER ) {
+	    printf ( "Not in DFU loader mode on final check\n" );
+	    exit ( 1 );
+	}
+
+	if ( do_download ) {
 	    // pickle ( &maple_device );
 	    s = maple_open ( &maple_device );
 	    if ( s == 0 ) {
 		s = 0;
-		// s = dfuload_do_dnload ( dfu_root, transfer_size, &file);
 		s = dfuload_do_dnload ( &maple_device, &file);
 		if ( s < 0 )
 		    printf ( "Download reported trouble\n" );
@@ -230,6 +267,89 @@ main ( int argc, char **argv )
 	libusb_exit(context);
 	printf ( "All done !!\n" );
 	return 0;
+}
+
+/* We usually see 1 0 0 2, i.e. we get the loader
+ * after 0.4 seconds, even though we allow 1.0
+ */
+
+int
+wait_for_loader ( libusb_context *context )
+{
+	int m;
+	int i;
+
+	for ( i=0; i<10; i++ ) {
+	    milli_sleep ( 100 );
+	    m = find_maple ( context, NULL );
+	    // printf ( "Maple mode: %d\n", m );
+	    if ( m == MAPLE_LOADER )
+		return 1;
+	}
+	printf ( "Failed to enter loader mode\n" );
+	return 0;
+}
+
+#include <sys/ioctl.h>
+
+/* Monkey with modem control bits (see man 4 tty_ioctl)
+ * we can BIC (clear), BIS (set), and GET (get)
+ * This takes the Maple out of serial/application mode and
+ * into loader mode.  I wrote a test to check every 0.1 seconds
+ * and saw after this:
+ *
+ *  1 time - still in serial mode.
+ *  1 time - gone altogether.
+ *  28 times - in DFU loader mode (2.8 seconds).
+ *  1 time - gone altogether.
+ *  then back to serial/application mode.
+ *
+ * This just does the magic trick as per the reset.py script
+ */
+
+int
+serial_trigger ( char *path )
+{
+	int fd;
+	int rts_flag = TIOCM_RTS;
+	int dtr_flag = TIOCM_DTR;
+	int n;
+
+	fd = open ( path, O_RDWR | O_NOCTTY );
+	if ( fd < 0 ) {
+	    printf ( "Open of %s fails\n", path );
+	    return 0;
+	}
+
+	ioctl ( fd, TIOCMBIC, &rts_flag ); // RTS = 0
+	milli_sleep ( 10 );	/* 0.01 second */
+
+	ioctl ( fd, TIOCMBIC, &dtr_flag ); // DTR = 0
+	milli_sleep ( 10 );	/* 0.01 second */
+	ioctl ( fd, TIOCMBIS, &dtr_flag ); // DTR = 1
+	milli_sleep ( 10 );	/* 0.01 second */
+	ioctl ( fd, TIOCMBIC, &dtr_flag ); // DTR = 0
+
+	ioctl ( fd, TIOCMBIS, &rts_flag ); // RTS = 1
+	milli_sleep ( 10 );	/* 0.01 second */
+	ioctl ( fd, TIOCMBIS, &dtr_flag ); // DTR = 1
+	milli_sleep ( 10 );	/* 0.01 second */
+	ioctl ( fd, TIOCMBIC, &dtr_flag ); // DTR = 0
+	milli_sleep ( 10 );	/* 0.01 second */
+
+	n = write ( fd, "1EAF", 4 );
+	if ( n != 4 ) {
+	    printf ( "Write to %s fails\n", path );
+	    close(fd);
+	    return 0;
+	}
+	// printf ( "Serial trigger, write: %d\n", n );
+	/* Not buffered, no need to flush */
+
+	milli_sleep ( 100 );	/* 0.1 second */
+	close(fd);
+
+	return 1;
 }
 
 #define DETACH_TIMEOUT	1000
@@ -408,9 +528,14 @@ find_maple ( libusb_context *context, struct maple_device *mp )
 	    else
 		rv = MAPLE_UNKNOWN;
 
-	    /* Return first match */
-	    mp->dev = libusb_ref_device ( dev );
-	    memcpy ( &mp->desc, &desc, sizeof(desc) );
+	    /* We call with this NULL sometimes, just to get the state info.
+	     */
+	    if ( mp ) {
+		/* Return first match */
+		mp->dev = libusb_ref_device ( dev );
+		memcpy ( &mp->desc, &desc, sizeof(desc) );
+	    }
+
 	    return rv;
 	}
 
@@ -455,7 +580,7 @@ serial_is_maple ( char *dev )
 	    p = line;
 	    while ( *p && *p != '=' )
 		p++;
-	    printf ( "%s", p );
+	    // printf ( "%s", p );
 	    if ( strncmp ( p, "=1eaf/4", 7 ) == 0 )
 		rv = 1;
 	    break;
@@ -482,7 +607,7 @@ find_maple_serial ( void )
 	    fd = open ( dev, O_RDWR );
 	    if ( fd < 0 )
 		break;
-	    printf ( "Serial: %s\n", dev );
+	    // printf ( "Serial: %s\n", dev );
 	    sprintf ( dev2, "ttyACM%d", i );
 	    if ( serial_is_maple ( dev2 ) )
 		return dev;

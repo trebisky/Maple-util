@@ -64,7 +64,7 @@ dfuload_do_dnload (struct maple_device *mp, struct dfu_file *file)
 	int xfer_size = mp->xfer_size;
 
 	// printf("Copying data from PC to DFU device\n");
-	printf ( "Downloading %d bytes\n", file->size );
+	printf ( "Downloading %d bytes from %s\n", file->size, file->name );
 
 	buf = file->buf;
 	//expected_size = file->size.total - file->size.suffix;
