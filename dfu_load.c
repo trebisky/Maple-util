@@ -51,6 +51,8 @@ void milli_sleep ( int );
 
 extern int verbose;
 
+static void dfu_progress_bar ( const char *, unsigned long, unsigned long );
+
 int
 dfuload_do_dnload (struct maple_device *mp, struct dfu_file *file)
 // dfuload_do_dnload (struct dfu_if *dif, int xfer_size, struct dfu_file *file)
@@ -71,7 +73,8 @@ dfuload_do_dnload (struct maple_device *mp, struct dfu_file *file)
 	expected_size = file->size;
 	bytes_sent = 0;
 
-	//dfu_progress_bar("Download", 0, 1);
+	dfu_progress_bar("Download", 0, 1);
+
 	while (bytes_sent < expected_size) {
 		int bytes_left;
 		int chunk_size;
@@ -126,7 +129,9 @@ dfuload_do_dnload (struct maple_device *mp, struct dfu_file *file)
 			ret = -1;
 			goto out;
 		}
+
 		//dfu_progress_bar("Download", bytes_sent, bytes_sent + bytes_left);
+		dfu_progress_bar("Download", bytes_sent, expected_size );
 	}
 
 	/* send one zero sized download request to signalize end */
@@ -142,7 +147,7 @@ dfuload_do_dnload (struct maple_device *mp, struct dfu_file *file)
 		goto out;
 	}
 
-	//dfu_progress_bar("Download", bytes_sent, bytes_sent);
+	dfu_progress_bar("Download", bytes_sent, bytes_sent);
 
 	if (verbose)
 		printf("Sent a total of %i bytes\n", bytes_sent);
@@ -244,5 +249,50 @@ out_free:
 	return ret;
 }
 #endif
+
+#define PROGRESS_BAR_WIDTH 25
+
+static void
+dfu_progress_bar(const char *desc, unsigned long curr, unsigned long max)
+{
+	static char buf[PROGRESS_BAR_WIDTH + 1];
+	static unsigned long last_progress = -1;
+	static time_t last_time;
+	time_t curr_time = time(NULL);
+	unsigned long progress;
+	unsigned long x;
+
+	/* check for not known maximum */
+	if (max < curr)
+		max = curr + 1;
+
+	/* make none out of none give zero */
+	if (max == 0 && curr == 0)
+		max = 1;
+
+	/* compute completion */
+	progress = (PROGRESS_BAR_WIDTH * curr) / max;
+	if (progress > PROGRESS_BAR_WIDTH)
+		progress = PROGRESS_BAR_WIDTH;
+	if (progress == last_progress &&
+	    curr_time == last_time)
+		return;
+	last_progress = progress;
+	last_time = curr_time;
+
+	for (x = 0; x != PROGRESS_BAR_WIDTH; x++) {
+		if (x < progress)
+			buf[x] = '=';
+		else
+			buf[x] = ' ';
+	}
+	buf[x] = 0;
+
+	printf("\r%s\t[%s] %3ld%% %12ld bytes", desc, buf,
+	    (100ULL * curr) / max, curr);
+
+	if (progress == PROGRESS_BAR_WIDTH)
+		printf("\n%s done.\n", desc);
+}
 
 /* THE END */
