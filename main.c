@@ -4,9 +4,16 @@
  * Tool to do DFU downloads over USB to my devices
  * that have Maple bootloaders.
  *
+ * This replaces the use of dfu-util and reset.py for Maple boards.
+ * Why do this?
+ *  1) A chance for me to learn about libusb
+ *  2) dfu-util error messages are terrible.
+ *  3) This is specific and streamlined for maple devices
+ *  4) If I ever add the ability to read elf files, it will be
+ *     a step forward in avoiding stupid errors.
+ *
  * TODO - 
  * - read elf file, verify link address 08005000
- * - perform serial reset if maple found in serial mode.
  */
 #include <stdlib.h>
 #include <stdio.h>
@@ -51,7 +58,8 @@ Sending zero size packet
  - status 0
 Ask for status
  - status response: 6
-state(8) = dfuMANIFEST-WAIT-RESET, status(0) = No error condition is present
+state(8) = dfuMANIFEST-WAIT-RESET
+status(0) = No error condition is present
 Done!
 All done !!
  */
